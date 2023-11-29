@@ -80,8 +80,14 @@ __kernel void gemm_kernel(__read_only image2d_t img_a,
 
 #pragma unroll
     for (int i = 0; i < 8; i++) {
-      c[i] += a[i].x * b[0] + a[i].y * b[1] + a[i].z * b[2] + a[i].w * b[3];
+      // c[i] += a[i].x * b[0] + a[i].y * b[1] + a[i].z * b[2] + a[i].w * b[3];
+
+      c[i] = mad(a[i].x, b[0], c[i]);
+      c[i] = mad(a[i].y, b[1], c[i]);
+      c[i] = mad(a[i].z, b[2], c[i]);
+      c[i] = mad(a[i].w, b[3], c[i]);
     }
+
   }
 
 #pragma unroll
@@ -276,8 +282,12 @@ int main() {
     cl_int err2 = event.getProfilingInfo(CL_PROFILING_COMMAND_END, &end_time);
     float exec_time = (end_time - start_time) / 1000.0f;
     printf("mean exec time: %f us ----------\n", exec_time);
+
+    double gflops = 2.0f * m * n * k / 1000 / 1000 / 1000 / (exec_time / 1000.0f) * 1000.0f;
+    printf("gflops: %f\n", gflops);
   }
   queue.finish();
+  printf("mnk: %d %d %d\n", m, n, k);
 
   queue.enqueueReadBuffer(d_c, CL_TRUE, 0, mem_c.bytes, mem_c.Mem());
 
