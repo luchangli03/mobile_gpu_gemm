@@ -174,8 +174,8 @@ int main() {
 
   cl_image_desc image_desc_a = {0};
   image_desc_a.image_type = CL_MEM_OBJECT_IMAGE2D;
-  image_desc_a.image_width = k / 4;
-  image_desc_a.image_height = m;
+  image_desc_a.image_width = m / 4;
+  image_desc_a.image_height = k;
   image_desc_a.image_row_pitch = 0;
 
   cl_image_desc image_desc_b = {0};
@@ -189,9 +189,6 @@ int main() {
 
   cl_mem img_b = clCreateImage(context.get(), CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, &image_format, &image_desc_b,
                                NULL, &error);
-
-  // cl::Image img_b = cl::Image2D(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-  //                               cl::ImageFormat(CL_RGBA, CL_HALF_FLOAT), n / 4, k, 0);
 
   array<size_t, 3> origin;
   array<size_t, 3> region;
