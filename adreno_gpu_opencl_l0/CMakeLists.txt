@@ -18,6 +18,11 @@ add_executable(
     src/gemm_iii_nn.cpp
 )
 
+add_executable(
+    gemm_iib_tn 
+    src/gemm_iib_tn.cpp
+)
+
 include_directories(
     ${CMAKE_SOURCE_DIR}/../third_party/OpenCL-Headers-main/
     ${CMAKE_SOURCE_DIR}/../third_party/OpenCL-CLHPP-main/include/
@@ -40,6 +45,13 @@ target_link_libraries(
 
 target_link_libraries(
     gemm_iii_nn 
+    PUBLIC 
+    ${CMAKE_SOURCE_DIR}/../third_party/lib64/libOpenCL.so
+    log
+)
+
+target_link_libraries(
+    gemm_iib_tn 
     PUBLIC 
     ${CMAKE_SOURCE_DIR}/../third_party/lib64/libOpenCL.so
     log

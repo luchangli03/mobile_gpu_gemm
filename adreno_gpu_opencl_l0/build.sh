@@ -51,3 +51,5 @@ export DEV_DIR=/data/local/tmp
 adb push gemm_bib_nn $DEV_DIR
 adb push gemm_iib_nn $DEV_DIR
 adb push gemm_iii_nn $DEV_DIR
+
+adb push gemm_iib_tn $DEV_DIR
