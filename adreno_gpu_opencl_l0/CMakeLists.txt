@@ -14,6 +14,11 @@ add_executable(
 )
 
 add_executable(
+    gemm_ibb_nn 
+    src/gemm_ibb_nn.cpp
+)
+
+add_executable(
     gemm_iib_nn 
     src/gemm_iib_nn.cpp
 )
@@ -43,6 +48,13 @@ target_link_libraries(
 
 target_link_libraries(
     gemm_bib_nn_m4n8 
+    PUBLIC 
+    ${CMAKE_SOURCE_DIR}/../third_party/lib64/libOpenCL.so
+    log
+)
+
+target_link_libraries(
+    gemm_ibb_nn 
     PUBLIC 
     ${CMAKE_SOURCE_DIR}/../third_party/lib64/libOpenCL.so
     log
