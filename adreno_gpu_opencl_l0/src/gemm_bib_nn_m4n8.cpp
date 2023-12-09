@@ -33,10 +33,10 @@ https://developer.qualcomm.com/blog/matrix-multiply-adreno-gpus-part-1-opencl-op
 https://developer.qualcomm.com/blog/matrix-multiply-adreno-gpus-part-2-host-code-and-kernel
 https://github.com/ysh329/OpenCL-101/issues/55
 */
-#define MTILE 8
-#define NTILE 4
+#define MTILE 4
+#define NTILE 8
 
-const std::string gemm_kernel{R"(
+std::string gemm_kernel{R"(
 #pragma OPENCL EXTENSION cl_khr_fp16 : enable
 
 #define DTYPE       DTYPE_ARG
@@ -44,57 +44,69 @@ const std::string gemm_kernel{R"(
 
 #define READ_IMAGE_FUNC READ_IMAGE_FUNC_ARG
 
-#define MTILE 8
-#define NTILE 4
+#define MTILE 4
+#define NTILE 8
 #define KTILE 4
 
-__kernel void gemm_kernel(__read_only image2d_t img_a,
-                          __read_only image2d_t img_b,
-                          __global DTYPE *d_c,
-                          const int m, const int n, const int k) {
+__kernel void gemm_kernel(__global const DTYPE *d_a, __read_only image2d_t img_b, __global DTYPE *d_c, const int m,
+                          const int n, const int k) {
   int gx = get_global_id(0); // [0, N / NTILE)
   int gy = get_global_id(1); // [0, M / MTILE)
 
   DTYPE_PACK4 a[MTILE];
-  DTYPE_PACK4 b[KTILE];
-  DTYPE_PACK4 c[MTILE];
+  DTYPE_PACK4 b0[KTILE];
+  DTYPE_PACK4 b1[KTILE];
+  DTYPE_PACK4 c0[MTILE];
+  DTYPE_PACK4 c1[MTILE];
 
   for (int i = 0; i < MTILE; i++) {
-    c[i] = 0.0f;
+    c0[i] = 0.0f;
+    c1[i] = 0.0f;
   }
 
-  int a_y_off = gy * MTILE;
+  // gy * 8 * k, addr of first line of m block
+  int A_y_off = (gy * MTILE) * k; // a_y_idx
 
   int kloop = k / KTILE;
 
+  // since we read twice to read 8 (2*pack4) elems
+  int img_x_offset = gx * 2;
+
   for (int ktcnt = 0; ktcnt < kloop; ktcnt++) {
-    int kpos = ktcnt*KTILE;
-    
-// 准备数据b：1行4列
+    int kpos = ktcnt * KTILE;
 #pragma unroll
     for (int i = 0; i < KTILE; i++) {
-      b[i] = READ_IMAGE_FUNC(img_b, (int2)(gx, kpos + i));
+      b0[i] = READ_IMAGE_FUNC(img_b, (int2)(img_x_offset, kpos + i));
+      b1[i] = READ_IMAGE_FUNC(img_b, (int2)(img_x_offset + 1, kpos + i));
     }
 
     // 准备数据a: 8行4列（4列为float4）
+    int A_off = A_y_off + kpos;
 #pragma unroll
     for (int i = 0; i < MTILE; i++) {
-      a[i] = READ_IMAGE_FUNC(img_a, (int2)(ktcnt, a_y_off + i));
+      a[i] = vload4(0, d_a + A_off);
+      A_off += k;
     }
 
 #pragma unroll
     for (int i = 0; i < MTILE; i++) {
-      c[i] = a[i] + b[0];
-      c[i] = a[i] + b[1];
-      c[i] = a[i] + b[2];
-      c[i] = a[i] + b[3];
+      c0[i] = mad(a[i].x, b0[0], c0[i]);
+      c0[i] = mad(a[i].y, b0[1], c0[i]);
+      c0[i] = mad(a[i].z, b0[2], c0[i]);
+      c0[i] = mad(a[i].w, b0[3], c0[i]);
+
+      c1[i] = mad(a[i].x, b1[0], c1[i]);
+      c1[i] = mad(a[i].y, b1[1], c1[i]);
+      c1[i] = mad(a[i].z, b1[2], c1[i]);
+      c1[i] = mad(a[i].w, b1[3], c1[i]);
     }
   }
 
 #pragma unroll
   for (int i = 0; i < MTILE; i++) {
     int c_offs = ((gy * MTILE) + i) * n + (gx * NTILE);
-    vstore4(c[i], 0, d_c + c_offs);
+    vstore4(c0[i], 0, d_c + c_offs);
+    vstore4(c1[i], 0, d_c + c_offs + 4);
   }
 }
 )"};
@@ -149,9 +161,9 @@ int main() {
 
   // m must be integer multiple of 8
   // n, k must be integer multiple of 4
-  int m = 2048;
-  int n = 2048;
-  int k = 2048;
+  int m = 1024;
+  int n = 1024;
+  int k = 1024;
 
   vector<int> a_shape = {m, k};
   vector<int> b_shape = {k, n};
@@ -173,23 +185,14 @@ int main() {
   image_format.image_channel_order = CL_RGBA;
   image_format.image_channel_data_type = image_dtype;
 
-  cl_image_desc image_desc_a = {0};
-  image_desc_a.image_type = CL_MEM_OBJECT_IMAGE2D;
-  image_desc_a.image_width = k / 4;
-  image_desc_a.image_height = m;
-  image_desc_a.image_row_pitch = 0;
+  cl_image_desc image_desc = {0};
+  image_desc.image_type = CL_MEM_OBJECT_IMAGE2D;
+  image_desc.image_width = n / 4;
+  image_desc.image_height = k;
+  image_desc.image_row_pitch = 0;
 
-  cl_image_desc image_desc_b = {0};
-  image_desc_b.image_type = CL_MEM_OBJECT_IMAGE2D;
-  image_desc_b.image_width = n / 4;
-  image_desc_b.image_height = k;
-  image_desc_b.image_row_pitch = 0;
-
-  cl_mem img_a = clCreateImage(context.get(), CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, &image_format, &image_desc_a,
-                               NULL, &error);
-
-  cl_mem img_b = clCreateImage(context.get(), CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, &image_format, &image_desc_b,
-                               NULL, &error);
+  cl_mem img_b =
+      clCreateImage(context.get(), CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR, &image_format, &image_desc, NULL, &error);
 
   // cl::Image img_b = cl::Image2D(context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
   //                               cl::ImageFormat(CL_RGBA, CL_HALF_FLOAT), n / 4, k, 0);
@@ -200,14 +203,6 @@ int main() {
   origin[0] = 0;
   origin[1] = 0;
   origin[2] = 0;
-
-  region[0] = k / 4;
-  region[1] = m;
-  region[2] = 1;
-
-  error |=
-      clEnqueueWriteImage(queue.get(), img_a, CL_TRUE, origin.data(), region.data(), 0, 0, mem_a.Mem(), 0, NULL, NULL);
-
   region[0] = n / 4;
   region[1] = k;
   region[2] = 1;
@@ -216,7 +211,7 @@ int main() {
       clEnqueueWriteImage(queue.get(), img_b, CL_TRUE, origin.data(), region.data(), 0, 0, mem_b.Mem(), 0, NULL, NULL);
 
   // push write commands to queue
-  // queue.enqueueWriteBuffer(d_a, CL_TRUE, 0, mem_a.bytes, mem_a.Mem());
+  queue.enqueueWriteBuffer(d_a, CL_TRUE, 0, mem_a.bytes, mem_a.Mem());
   queue.enqueueWriteBuffer(d_c, CL_TRUE, 0, mem_c.bytes, mem_c.Mem());
 
   string kernel_code = gemm_kernel;
@@ -240,7 +235,7 @@ int main() {
 
   error = 0;
   int arg_pos = 0;
-  error |= cl_kernel.setArg(arg_pos++, sizeof(cl_mem), &img_a);
+  error |= cl_kernel.setArg(arg_pos++, sizeof(cl_mem), &d_a);
   error |= cl_kernel.setArg(arg_pos++, sizeof(cl_mem), &img_b);
   error |= cl_kernel.setArg(arg_pos++, sizeof(cl_mem), &d_c);
 

@@ -37,6 +37,10 @@ https://github.com/ysh329/OpenCL-101/issues/55
 std::string gemm_kernel{R"(
 #pragma OPENCL EXTENSION cl_khr_fp16 : enable
 
+#define MTILE 8
+#define NTILE 4
+#define KTILE 4
+
 #define DTYPE       DTYPE_ARG
 #define DTYPE_PACK4 DTYPE_ARG4
 
@@ -46,12 +50,12 @@ __kernel void gemm_kernel(__global const DTYPE *d_a,
                           __read_only image2d_t img_b,
                           __global DTYPE *d_c,
                           const int m, const int n, const int k) {
-  int gx = get_global_id(0); // [0, N / 4)
-  int gy = get_global_id(1); // [0, M / 8)
+  int gx = get_global_id(0); // [0, N / NTILE)
+  int gy = get_global_id(1); // [0, M / MTILE)
 
-  DTYPE_PACK4 a[8];
-  DTYPE_PACK4 b[4];
-  DTYPE_PACK4 c[8];
+  DTYPE_PACK4 a[MTILE];
+  DTYPE_PACK4 b[KTILE];
+  DTYPE_PACK4 c[MTILE];
 
   for (int i = 0; i < 8; i++) {
     c[i] = 0.0f;
@@ -61,24 +65,20 @@ __kernel void gemm_kernel(__global const DTYPE *d_a,
   int A_y_off = (gy << 3) * k; // a_y_idx
 
   for (int pos = 0; pos < k; pos += 4) {
-// 准备数据b：1行4列
 #pragma unroll
     for (int i = 0; i < 4; i++) {
       b[i] = READ_IMAGE_FUNC(img_b, (int2)(gx, pos + i));
     }
 
-    // 准备数据a: 8行4列（4列为float4）
     int A_off = A_y_off + pos;
 #pragma unroll
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < MTILE; i++) {
       a[i] = vload4(0, d_a + A_off);
       A_off += k;
     }
 
 #pragma unroll
-    for (int i = 0; i < 8; i++) {
-      // c[i] += a[i].x * b[0] + a[i].y * b[1] + a[i].z * b[2] + a[i].w * b[3];
-
+    for (int i = 0; i < MTILE; i++) {
       c[i] = mad(a[i].x, b[0], c[i]);
       c[i] = mad(a[i].y, b[1], c[i]);
       c[i] = mad(a[i].z, b[2], c[i]);
@@ -87,8 +87,8 @@ __kernel void gemm_kernel(__global const DTYPE *d_a,
   }
 
 #pragma unroll
-  for (int i = 0; i < 8; i++) {
-    int c_offs = ((gy << 3) + i) * n + (gx << 2);
+  for (int i = 0; i < MTILE; i++) {
+    int c_offs = ((gy * MTILE) + i) * n + (gx * NTILE);
     vstore4(c[i], 0, d_c + c_offs);
   }
 }
