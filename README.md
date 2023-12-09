@@ -1,2 +1,2 @@
 # mobile_gpu_gemm
-mobile gpu gemm implemented by OpenCL
+mobile GPU (ARM Mali, QCOM Adreno) GEMM implemented by OpenCL
