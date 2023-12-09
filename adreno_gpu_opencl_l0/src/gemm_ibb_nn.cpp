@@ -84,10 +84,10 @@ __kernel void gemm_kernel(__read_only image2d_t img_a, __global DTYPE *d_b, __gl
 
 #pragma unroll
     for (int i = 0; i < MTILE; i++) {
-      c[i] = a[i] + b[0];
-      c[i] = a[i] + b[1];
-      c[i] = a[i] + b[2];
-      c[i] = a[i] + b[3];
+      c[i] = mad(a[i].x, b[0], c[i]);
+      c[i] = mad(a[i].y, b[1], c[i]);
+      c[i] = mad(a[i].z, b[2], c[i]);
+      c[i] = mad(a[i].w, b[3], c[i]);
     }
   }
 
